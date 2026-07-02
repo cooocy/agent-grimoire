@@ -9,6 +9,7 @@ agent-grimoire/
 ├── prompts/                         # 通用提示词与项目约定
 ├── skills/                          # Agent Skills
 ├── link_skills.fish                 # Skills 链接脚本
+├── weave_prompts.fish               # Prompt 合并脚本
 └── README.md
 ```
 
@@ -18,9 +19,19 @@ agent-grimoire/
 
 当前包含：
 
-- `commit_conventions.md`：Git 提交类型与提交信息格式。
+- `common_conventions.md`：Git 提交格式、Agent 计划等通用协作约定。
 - `frontend_convention.md`：前端项目的通用开发和协作规范。
 - `java_convention.md`：Java 项目的通用架构、编码和协作规范。
+
+### 合并 Prompt
+
+运行 `weave_prompts.fish`，可以按参数顺序合并多个 prompt，并在指定目录生成内容相同的 `AGENTS.md` 和 `CLAUDE.md`：
+
+```bash
+./weave_prompts.fish ~/Downloads common_conventions java_convention
+```
+
+prompt 名称不需要携带 `.md`；目标目录必须已经存在，已有的 `AGENTS.md` 和 `CLAUDE.md` 会被覆盖。
 
 ## Skills
 

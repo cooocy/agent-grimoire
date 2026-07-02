@@ -21,3 +21,31 @@ Examples:
 - feat: i18n: update billing table column header for clarity
 - fix: usage: handle empty data export and reset page on period change
 ```
+
+## Agent Planning Rule
+
+For every non-trivial coding task, if the agent creates a plan or enters plan mode, the finalized plan MUST be written to the repository before implementation.
+
+### Plan Location
+
+Write plans to:
+
+`docs/plan/`
+
+Create the directory if it does not exist.
+
+### Timing
+
+The plan must be persisted after the plan is finalized and before the first code change.
+
+This is a required execution gate.
+
+### Filename
+
+Use:
+
+`YYYYMMDDHHMM-<task-slug>.md`
+
+Example:
+
+`202607021430-add-token-auth.md`
