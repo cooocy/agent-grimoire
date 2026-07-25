@@ -1,0 +1,4 @@
+interface:
+  display_name: "Init Python Service"
+  short_description: "Initialize production-ready Python services"
+  default_prompt: "Use $init-python-service to initialize a deployable Python FastAPI service in this repository."
