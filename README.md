@@ -53,3 +53,4 @@ prompt 名称不需要携带 `.md`；目标目录必须已经存在，已有的 
    - `~/.claude/skills/`
    - `~/.codex/skills/`
    - `~/.config/opencode/skills/`
+   - `~/.pi/agent/skills/`

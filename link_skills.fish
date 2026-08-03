@@ -24,7 +24,8 @@ end
 set TARGET_SKILL_DIRS \
     ~/.claude/skills \
     ~/.codex/skills \
-    ~/.config/opencode/skills
+    ~/.config/opencode/skills \
+    ~/.pi/agent/skills
 
 for target_dir in $TARGET_SKILL_DIRS
     if not mkdir -p (dirname "$target_dir")
