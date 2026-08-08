@@ -1,35 +1,37 @@
-## Java 项目代码规范（通用）
+## DDD 项目代码规范（通用）
 
-0. 协作流程（最重要）
+### 0. 协作流程（最重要）
 
 - **不要自己执行项目的打包、运行命令**：`java` / `gradle` / `mvn` 等一律不跑。
 - 改完代码直接告诉我变更点，编译、类型检查、构建、启动由我执行。
 - 如果确实需要启动项目来验证，先告诉我，由我决定是否启。
 - 可以做的：读代码、改代码。
 
-1. 分层 & 包结构
+### 1. 分层 & 包结构
 
 ```
-  domain/{aggregate}/         — Entity, Repository(接口), Service, VO, Enum
-  application/
-    events/                   — 应用事件对象，如 CatInteractedEvent
-    service/{aggregate}/      — AppService
-    coordinator/{aggregate}/  — Coordinator, AppService 与 domain / Domain Service 之间的应用层中间层
-    shared/{aggregate}/       — 应用层共享语义，如跨 RO / Coordinator / AppService 使用的枚举、轻量值对象
-    arv/assembler/            — Domain / 应用层对象与 VO 之间的装配转换
-    arv/ro/{aggregate}/       — Request Object
-    arv/vo/{aggregate}/       — View Object
-    profile/                  — ApplicationProfile
-  infrastructure/
-    repositoryimpl/{aggregate}/  — PO, Mapper, RepositoryImpl
-    properties/               — @ConfigurationProperties 类
-    config/                   — @Configuration / Bean 装配
-    {component}/              — OssClient, WorkWeiXin 等基础设施组件
-  interfaces/controller/{aggregate}/
-  interfaces/listeners/{aggregate}/
+domain/{aggregate}/            — Entity, Repository(接口), Service, VO, Enum
+application/
+  events/                      — 应用事件对象，如 CatInteractedEvent
+  service/{aggregate}/         — AppService
+  finder/{aggregate}/          — Finder，跨聚合只读编排
+  coordinator/{aggregate}/     — Coordinator，跨聚合读写编排
+  shared/{aggregate}/          — 应用层共享语义，跨 RO / Coordinator / Finder 使用的枚举、轻量值对象
+  arv/assembler/               — Domain / 应用层对象与 VO 之间的装配转换
+  arv/ro/{aggregate}/          — Request Object
+  arv/vo/{aggregate}/          — View Object
+  profile/                     — ApplicationProfile
+infrastructure/
+  repositoryimpl/{aggregate}/ — PO, Mapper, RepositoryImpl
+  properties/                  — @ConfigurationProperties 类
+  config/                      — @Configuration / Bean 装配
+  {component}/                 — OssClient, WorkWeiXin 等基础设施组件
+interfaces/
+  controller/{aggregate}/
+  listeners/{aggregate}/
 ```
 
-2. Domain Entity
+### 2. Domain Entity
 
 - 尽量不暴露 @Getter；按需给必要字段 / 方法暴露访问能力 + @ToString + @EqualsAndHashCode(of = "id")
 - 字段全部 @Nonnull / @Nullable 强标注
@@ -42,7 +44,7 @@
 - 校验类异常可以从 domain 抛 BizException（Album.sort() 是范例），但鉴权的抛异常留给 AppService，domain 只暴露谓词
 - 聚合内的有序集合用 LinkedHashSet，对外用 getXxxAsCopy() 返不可变副本
 
-3. Domain Service
+### 3. Domain Service
 
 - 位置：domain/{aggregate}/{Aggregate}Service.java，和 Entity 平级（不另起 services 包）
 - 命名：{Aggregate}Service（AlbumService）
@@ -56,26 +58,26 @@
 - 可以 @Slf4j；可以抛 BizException（校验类，跟 Entity 同款）；鉴权异常留给 AppService
 - AppService 用字段持有 `private final AlbumService albumService = AlbumService.getInstance();`，按普通方法调
 
-4. Repository
+### 4. Repository
 
 - 接口在 domain/{aggregate}/{Aggregate}Repository
 - 实现 @Repository class {Aggregate}RepositoryImpl
-- 方法命名:save / delete / findById / findByXxx / lock（for update）
+- 方法命名: save / delete / findById / findByXxx / lock（for update）
 - 返回 Optional<T> 或 List<T>，永远不返回 null，空集合用 List.of()
 - 查询用 LambdaQueryWrapper；空入参集合短路返回（避免 IN () 报错）
 - Mapper 继承 DereferenceEnhancedMapper<PO>，@Mapper
 
-5. PO
+### 5. PO
 
 - @TableName(value = "{prefix}_{name}", autoResultMap = true)
 - 表名前缀：m_ mood、u_ user、al_ album、ca_ ca、lan_ lan
-- @TableId 主键；SQL 关键字字段加反引号 ``@TableField("`date`")``
+- @TableId 主键；SQL 关键字字段加反引号 `@TableField("`date`")`
 - 嵌套对象 / 集合 → @TableField(typeHandler = JacksonTypeHandler.class) 存 JSON
 - @Setter @Getter @ToString，没有手写构造
 - toPO(domain) / toDomain(po) 静态方法，统一用 JacksonObjectMapper.convert
 - 枚举不加特殊 handler，按 name 存 varchar
 
-6. AppService
+### 6. AppService
 
 - @Service + @Slf4j
 - 写操作 @Transactional(rollbackFor = Exception.class)
@@ -87,7 +89,59 @@
 - AppService 与 domain / Domain Service 之间的中间编排可下沉到 application/coordinator/{aggregate}，避免 AppService 变厚
 - RO、Coordinator、AppService 都需要使用的应用层语义放 application/shared/{aggregate}；Coordinator 不依赖 RO
 
-7. Event / Publisher / Listener
+### 7. 应用层中间层（Finder / Coordinator / Assistant）
+
+#### 核心定位
+
+**Finder 和 Coordinator 是一对。Finder 负责读（跨聚合查询编排），Coordinator 负责读写（把事件 / 应用层参数编排成领域对象或调用领域服务）。Assistant 不是公共层，是 AppService 的私有内部实现。**
+
+#### Finder（只读查询编排）
+
+- 位置：`application/finder/{aggregate}/{Aggregate}Finder.java`
+- 命名：`{Aggregate}Finder` 或 `{Biz}Finder`（如 `UserTopPackageFinder`）
+- `@Component` + `@Slf4j`，**不加 `@Transactional`**
+- 可注入 `Repository` / 其它 `Finder`；不依赖 `RO`
+- 职责：跨聚合的读取编排、带业务默认值的查询、外部数据组装
+- 只返回领域对象 / `shared` 值对象，**不返回 VO**（VO 装配是 Assembler 的事）
+- 可被任意 AppService / Coordinator 注入复用；**纯读，绝不做写操作**
+- 命名即契约：注入方看到 `xxxFinder` 就知道"零事务、无副作用、只查不改"
+
+#### Coordinator（读写编排）
+
+- 位置：`application/coordinator/{aggregate}/{Aggregate}Coordinator.java`
+- `@Component` + `@Slf4j`
+- 与 Finder 配对：Finder 管读，Coordinator 管读写
+- 职责：把事件 / 应用层参数编排成领域对象、调用领域服务、串联多聚合的写流程
+- 接收领域对象 / `shared` 值对象，**不依赖 RO**（RO 是 AppService 入参，Coordinator 不认识接口层契约）
+- 复杂查询和跨聚合读编排交给 Finder，Coordinator 专注写编排
+
+#### Assistant（AppService 私有助手）
+
+- **不是公共层**：不单独建包，不放入 `application/finder` 或 `application/coordinator`
+- 作为 AppService 的 `private` 方法或同包内部类存在
+- 封装**单个 AppService 专用**的外部系统集成（支付网关、Redis 操作等）
+- 不被跨 AppService 共享；一旦逻辑需要被复用：
+  - 读 → 升级为 **Finder**
+  - 写 → 升级为 **Coordinator**
+
+#### 调用规范
+
+**核心原则：AppService 是唯一的编排者，严禁 AppService 调用别的 AppService。**
+
+AppService 只能向下依赖，可调用自己的或跨聚合的 Finder、Coordinator、Repository、Domain Service、私有 Assistant：
+
+| 我要干什么 | 调谁 |
+|---|---|
+| 简单 CRUD 查询 | 直接注入 `Repository` |
+| 跨聚合带默认值的读编排 | 注入 `Finder` |
+| 跨聚合的写编排 / 事件处理 | 注入 `Coordinator` |
+| 纯领域计算 | 注入 `Domain Service`（`getInstance()`） |
+| 单 AppService 专用的外部调用 | private `Assistant` 方法 / 内部类 |
+| 改聚合状态 | 调聚合根行为方法 + `Repository.save()` |
+
+**❌ 绝对禁止：AppService 调用别的 AppService**（会导致事务边界纠缠、职责不清）
+
+### 8. Event / Publisher / Listener
 
 - 事件对象放 application/events，命名 `{Biz}Event`，如 CatInteractedEvent
 - 事件是应用层事实载体，不放业务逻辑；字段用 @Nonnull/@Nullable 标注
@@ -100,7 +154,7 @@
 - Coordinator 负责把事件 / 应用层参数编排成领域对象或调用领域服务，不持有 Listener 职责
 - Event 可以作为 AppService / Coordinator 入参；如果事件开始携带投递元数据、跨进程消息字段，或一个事件被多个用例以不同语义消费，应在 Listener 中转换成 application/shared/{aggregate} 的 Command / 轻量值对象
 
-8. Controller
+### 9. Controller
 
 - @RestController + @RequestMapping("/{aggregate}")（单数）
 - 字段命名：AlbumAppService s + HttpServletRequest request（新代码用 s，老的 service 不强求统一）
@@ -111,7 +165,7 @@
 - 返回 R.ok(...) / R.ok()（R<Void>）
 - 不放业务逻辑，只做：拿 profile → 调 AppService → 包 R
 
-9. 错误处理
+### 10. 错误处理
 
 - 通用错误码：er.rennala.response.Codes（ArgsIllegal / RecordNotFound / ServerError / TokenInvalid）
 - 业务错误码：domain/global/CodeAndMessage，按域分段编号（wx 70100 段、oss 70200 段、ca 10200 段...）
@@ -119,7 +173,7 @@
 - 不向前端泄露原始异常 message；catch 里 log.error(..., e) 记日志，再抛预定义错误码
 - 反探测：用户/相册不存在或无权访问，返回与"业务失败"相同的错误码
 
-10. RO / VO / Assembler
+### 11. RO / VO / Assembler
 
 - RO：{Entity}{Action}RO（AlbumCreateRO / AlbumUpdateRO / MoodCheckinRO）
 - VO：{Entity}VO
@@ -134,7 +188,7 @@
 - Assembler 只负责数据转换和展示装配，不做鉴权、参数校验、业务规则，不直接写 Repository
 - 需要 Repository / 外部数据补充 VO 时可注入依赖，但查询应服务于展示装配，复杂查询和业务编排仍留在 AppService / Coordinator
 
-11. 数据库 / Liquibase
+### 12. 数据库 / Liquibase
 
 - 路径：src/main/resources/liquibase/v{ver}/{seq}_{tableName}.xml
 - master.xml 集中 <include>
@@ -142,34 +196,26 @@
 - 表与索引拆 createTable + createIndex
 - 枚举存 varchar(16)；JSON 字段 type="json"；时间 timestamp；布尔 tinyint
 
-12. 配置
+### 13. 配置
 
 - application.yml 主配置，profile 切换：active: ${CONFIGURATION_TAIL} 环境变量
 - application-{profile}.yaml 放在项目根目录（不在 resources）
 - Properties 类：@Component + @ConfigurationProperties(prefix = "kebab-case") + @Setter @Getter @ToString
 - 字段都给默认值（空字符串 / 默认数字），避免 NPE
 
-13. 工具 / 常用库
+### 14. 工具 / 常用库
 
-┌─────────────────┬──────────────────────────────────────────────────┐
-│      用途       │                       选用                       │
-├─────────────────┼──────────────────────────────────────────────────┤
-│ 空集合判断      │ cn.hutool.core.collection.CollUtil.isEmpty       │
-├─────────────────┼──────────────────────────────────────────────────┤
-│ 空字符串        │ cn.hutool.core.util.StrUtil.isBlank / isNotBlank │
-├─────────────────┼──────────────────────────────────────────────────┤
-│ 对象比较 / 判空 │ java.util.Objects.equals / isNull / nonNull      │
-├─────────────────┼──────────────────────────────────────────────────┤
-│ 时间            │ Instant / LocalDate / YearMonth                  │
-├─────────────────┼──────────────────────────────────────────────────┤
-│ ID              │ er.rennala.kits.IdGenerator.snowflakeId()        │
-├─────────────────┼──────────────────────────────────────────────────┤
-│ Jackson         │ er.rennala.kits.JacksonObjectMapper.convert      │
-├─────────────────┼──────────────────────────────────────────────────┤
-│ 日志            │ @Slf4j                                           │
-└─────────────────┴──────────────────────────────────────────────────┘
+| 用途 | 选用 |
+|---|---|
+| 空集合判断 | cn.hutool.core.collection.CollUtil.isEmpty |
+| 空字符串 | cn.hutool.core.util.StrUtil.isBlank / isNotBlank |
+| 对象比较 / 判空 | java.util.Objects.equals / isNull / nonNull |
+| 时间 | Instant / LocalDate / YearMonth |
+| ID | er.rennala.kits.IdGenerator.snowflakeId() |
+| Jackson | er.rennala.kits.JacksonObjectMapper.convert |
+| 日志 | @Slf4j |
 
-14. 代码细节
+### 15. 代码细节
 
 - 方法 ≤ 50 行
 - 中文注释，// 后留空格，中文汉字 + 英文标点
